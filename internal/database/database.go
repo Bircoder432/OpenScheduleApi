@@ -18,10 +18,10 @@ type Tx struct {
 	db *gorm.DB
 }
 
-func NewDb(config *config.Config) (*gorm.DB, error) {
+func NewDb(cfgDb *config.DatabaseConfig) (*gorm.DB, error) {
 	dsn := fmt.Sprintf("%s:%s@(%s:%d)/%s?charset=utf8&parseTime=True",
-		config.Db.User, config.Db.Password,
-		config.Db.Host, config.Db.Port, config.Db.Dbname,
+		cfgDb.User, cfgDb.Password,
+		cfgDb.Host, cfgDb.Port, cfgDb.Dbname,
 	)
 	db, err := gorm.Open(mysql.Open(dsn))
 	if err != nil {

@@ -18,7 +18,7 @@ func main() {
 		logger.WithError(err).Fatal("unable to load config")
 	}
 
-	db, err := database.NewDb(cfg)
+	db, err := database.NewDb(&cfg.Db)
 	if err != nil {
 		logger.WithError(err).Fatal("unable to connect database")
 	}
