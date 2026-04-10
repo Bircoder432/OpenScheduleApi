@@ -6,7 +6,7 @@ import (
 	"github.com/ThisIsHyum/OpenScheduleApi/internal/config"
 	"github.com/ThisIsHyum/OpenScheduleApi/internal/database"
 	"github.com/ThisIsHyum/OpenScheduleApi/internal/logger"
-	"github.com/ThisIsHyum/OpenScheduleApi/internal/router"
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/server"
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -23,8 +23,18 @@ func main() {
 		logger.WithError(err).Fatal("unable to connect database")
 	}
 
+	collegeRepo := database.NewCollegeDb(db)
+	campusRepo := database.NewCampusDb(db)
+	studentGroupRepo := database.NewGroupDb(db)
+	callRepo := database.NewCallDb(db)
+	lessonRepo := database.NewLessonDb(db)
+
+	createTx := database.InitCreateTx(db)
+
 	app := fiber.New()
-	router.Register(app, db, logger, cfg.AdminToken)
+	server.Register(app,
+		collegeRepo, campusRepo,
+		studentGroupRepo, callRepo, lessonRepo, createTx, logger, cfg.AdminToken)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	logger.Infof("Running server on %s", addr)

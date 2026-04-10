@@ -1,15 +1,15 @@
-package router
+package server
 
 import (
 	"errors"
 	"net/url"
 
-	"github.com/ThisIsHyum/OpenScheduleApi/internal/database"
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/domain"
 	"github.com/ThisIsHyum/OpenScheduleApi/internal/dto"
-	"github.com/ThisIsHyum/OpenScheduleApi/internal/models"
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/repository"
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/service"
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 )
 
 const (
@@ -19,38 +19,32 @@ const (
 )
 
 type GroupHandler struct {
-	db     *database.Db
-	logger *logrus.Logger
+	groupService *service.StudentGroupService
+	logger       *logrus.Logger
 }
 
-func NewGroupHandler(app *fiber.App, db *database.Db, logger *logrus.Logger) {
-	handler := GroupHandler{db: db, logger: logger}
+func NewGroupHandler(app *fiber.App,
+	studentGroupRepo repository.StudentGroupRepo,
+	campusRepo repository.CampusRepo, collegeRepo repository.CollegeRepo, logger *logrus.Logger) {
+	groupService := service.NewStudentGroupService(studentGroupRepo, campusRepo, collegeRepo)
+	handler := GroupHandler{logger: logger, groupService: groupService}
 	app.Get(getGroupsByCampusId, handler.GetGroupsByCampusID)
 	app.Get(getGroupsByCollegeId, handler.GetGroupsByCollegeID)
 	app.Get(getGroup, handler.GetGroup)
 }
+
 func (h GroupHandler) GetGroupsByCampusID(ctx fiber.Ctx) error {
+	c := ctx.Context()
 	name := ctx.Query("name")
 	id := fiber.Params[uint](ctx, "campusId")
 	if id == 0 {
 		return dto.NewErrorResponse("invalid campusId", fiber.StatusBadRequest).Send(ctx)
 	}
 
-	var groups []models.StudentGroup
-	var err error
-
-	if _, err := h.db.GetCampusByID(id); errors.Is(err, gorm.ErrRecordNotFound) {
+	groups, err := h.groupService.GetGroups(c, id, name)
+	if errors.Is(err, domain.ErrNotFound) {
 		return dto.NewErrorResponse("campus not found", fiber.StatusNotFound).Send(ctx)
 	} else if err != nil {
-		h.logger.WithError(err).Error("unable to get campus")
-		return dto.NewErrorResponse("internal server error", fiber.StatusInternalServerError).Send(ctx)
-	}
-	if name != "" {
-		groups, err = h.db.GetGroupsByName(id, name)
-	} else {
-		groups, err = h.db.GetGroupsByCampusID(id)
-	}
-	if err != nil {
 		h.logger.WithError(err).Error("unable to get groups")
 		return dto.NewErrorResponse("internal server error", fiber.StatusInternalServerError).Send(ctx)
 	}
@@ -67,14 +61,10 @@ func (h GroupHandler) GetGroupsByCollegeID(ctx fiber.Ctx) error {
 		return dto.NewErrorResponse("invalid collegeId", fiber.StatusBadRequest).Send(ctx)
 	}
 
-	var groups []models.StudentGroup
-
-	if name != "" {
-		groups, err = h.db.GetGroupsByName(id, name)
-	} else {
-		groups, err = h.db.GetGroupsByCollegeID(id)
-	}
-	if err != nil {
+	groups, err := h.groupService.GetGroupsByCollegeID(ctx, id, name)
+	if errors.Is(err, domain.ErrNotFound) {
+		return dto.NewErrorResponse("college not found", fiber.StatusNotFound).Send(ctx)
+	} else if err != nil {
 		h.logger.WithError(err).Error("unable to get groups")
 		return dto.NewErrorResponse("internal server error", fiber.StatusInternalServerError).Send(ctx)
 	}
@@ -86,12 +76,12 @@ func (h GroupHandler) GetGroup(ctx fiber.Ctx) error {
 	if id == 0 {
 		return dto.NewErrorResponse("invalid groupId", fiber.StatusBadRequest).Send(ctx)
 	}
-	group, err := h.db.GetGroupByID(id)
-	if err != nil {
-		h.logger.WithError(err).Error("unable to get group")
-		return dto.NewErrorResponse("internal server error", fiber.StatusInternalServerError).Send(ctx)
-	} else if group.StudentGroupID == 0 {
+	group, err := h.groupService.GetGroup(ctx, id)
+	if errors.Is(err, domain.ErrNotFound) {
 		return dto.NewErrorResponse("group not found", fiber.StatusNotFound).Send(ctx)
+	} else if err != nil {
+		h.logger.WithError(err).Error("unable to get groups")
+		return dto.NewErrorResponse("internal server error", fiber.StatusInternalServerError).Send(ctx)
 	}
 	return ctx.JSON(group)
 }

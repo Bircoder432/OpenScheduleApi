@@ -1,6 +1,8 @@
 package dto
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v3"
 )
 
@@ -19,8 +21,22 @@ type UpdateGroupsRequest struct {
 }
 
 type GetParserResponse struct {
-	ParserID  uint `json:"parserId"`
 	CollegeID uint `json:"collegeId"`
+}
+
+type ScheduleResponse struct {
+	GroupID uint                     `json:"groupId"`
+	Date    time.Time                `json:"date"`
+	Lessons []ScheduleLessonResponse `json:"lessons"`
+}
+
+type ScheduleLessonResponse struct {
+	Title     string     `json:"title"`
+	Cabinet   string     `json:"cabinet"`
+	Teacher   string     `json:"teacher"`
+	Order     uint       `json:"order"`
+	StartTime HourMinute `json:"startTime"`
+	EndTime   HourMinute `json:"endTime"`
 }
 
 type ErrorResponse struct {

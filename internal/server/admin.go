@@ -1,9 +1,12 @@
-package router
+package server
 
 import (
-	"github.com/ThisIsHyum/OpenScheduleApi/internal/database"
+	"errors"
+
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/domain"
 	"github.com/ThisIsHyum/OpenScheduleApi/internal/dto"
-	"github.com/ThisIsHyum/OpenScheduleApi/internal/token"
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/repository"
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/service"
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
 )
@@ -15,13 +18,15 @@ const (
 )
 
 type AdminHandler struct {
-	db     *database.Db
-	logger *logrus.Logger
+	adminService *service.AdminService
+	logger       *logrus.Logger
 }
 
-func NewAdminHandler(app *fiber.App, db *database.Db, logger *logrus.Logger, adminToken string) {
-	handler := AdminHandler{db: db, logger: logger}
-	mh := MiddlewareHandler{db: db, logger: logger, adminToken: adminToken}
+func NewAdminHandler(app *fiber.App,
+	collegeRepo repository.CollegeRepo, campusRepo repository.CampusRepo, createTx repository.CreateTx, adminToken string, logger *logrus.Logger) {
+	adminService := service.NewAdminService(collegeRepo, campusRepo, createTx)
+	handler := AdminHandler{adminService: adminService, logger: logger}
+	mh := MiddlewareHandler{logger: logger, adminToken: adminToken}
 	app.Group(admin, mh.AdminAuthMiddleware).
 		Post(createParser, handler.NewParser).
 		Delete(deleteParser, handler.DeleteParser)
@@ -33,34 +38,25 @@ func (h AdminHandler) NewParser(ctx fiber.Ctx) error {
 		return dto.NewErrorResponse("invalid request body", fiber.StatusBadRequest).Send(ctx)
 	}
 
-	if colleges, err := h.db.GetCollegesByName(requestBody.CollegeName); err != nil {
+	token, err := h.adminService.NewParser(ctx, requestBody.CollegeName, requestBody.CampusNames)
+	if errors.Is(err, domain.ErrConflict) {
+		return dto.NewErrorResponse("college already exists", fiber.StatusConflict).Send(ctx)
+	} else if err != nil {
 		h.logger.WithField("error", err).Error("unable to get colleges")
 		return dto.NewErrorResponse("internal server error", fiber.StatusInternalServerError).Send(ctx)
-	} else if len(colleges) != 0 {
-		return dto.NewErrorResponse("college already exists", fiber.StatusConflict).Send(ctx)
 	}
 
-	token, err := token.GenerateToken()
-	if err != nil {
-		h.logger.WithField("error", err).Error("unable to create token")
-		return dto.NewErrorResponse("internal server error", fiber.StatusInternalServerError).Send(ctx)
-	}
-
-	if err = h.db.NewParser(token, requestBody.CollegeName, requestBody.CampusNames); err != nil {
-		h.logger.WithError(err).Error("unable to create parser")
-		return dto.NewErrorResponse("internal server error", fiber.StatusInternalServerError).Send(ctx)
-	}
 	return ctx.Status(fiber.StatusCreated).JSON(dto.NewParserResponse{Token: token})
 }
 
 func (h AdminHandler) DeleteParser(ctx fiber.Ctx) error {
+	c := ctx.Context()
 	id := fiber.Params[uint](ctx, "parserId")
 	if id == 0 {
 		return dto.NewErrorResponse("invalid parserId", fiber.StatusBadRequest).Send(ctx)
 	}
 
-	deleted, err := h.db.DeleteParser(id)
-	if !deleted {
+	if err := h.adminService.DeleteParser(c, id); errors.Is(err, domain.ErrNotFound) {
 		return dto.NewErrorResponse("parser not found", fiber.StatusNotFound).Send(ctx)
 	} else if err != nil {
 		h.logger.WithError(err).Error("unable to delete parser")

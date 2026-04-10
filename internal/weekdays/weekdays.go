@@ -3,8 +3,6 @@ package weekdays
 import (
 	"strings"
 	"time"
-
-	"gorm.io/datatypes"
 )
 
 var stringsWeekdays = map[string]time.Weekday{}
@@ -33,7 +31,7 @@ func GetDateByWeekday(weekday time.Weekday, offset int) time.Time {
 	return now.AddDate(0, 0, int(weekday-current))
 }
 
-func WeekBounds(offset int) (datatypes.Date, datatypes.Date) {
+func WeekBounds(offset int) (time.Time, time.Time) {
 	refDate := time.Now().AddDate(0, 0, offset*7)
 
 	weekday := int(refDate.Weekday())
@@ -46,5 +44,5 @@ func WeekBounds(offset int) (datatypes.Date, datatypes.Date) {
 		refDate.Year(), refDate.Month(), refDate.Day(), 0, 0, 0, 0, refDate.Location(),
 	).AddDate(0, 0, -daysFromMonday)
 	end := start.AddDate(0, 0, 6)
-	return datatypes.Date(start), datatypes.Date(end)
+	return start, end
 }
