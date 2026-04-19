@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ThisIsHyum/OpenScheduleApi/internal/database/models"
 	"github.com/ThisIsHyum/OpenScheduleApi/internal/domain"
@@ -80,7 +81,9 @@ func (c CollegeDb) GetByGroupID(ctx context.Context, groupID uint) (domain.Colle
 
 func (c CollegeDb) GetByToken(ctx context.Context, token string) (domain.College, error) {
 	var college models.College
-	if err := c.db.WithContext(ctx).Where("token = ?", token).First(&college).Error; err != nil {
+	if err := c.db.WithContext(ctx).Where("token = ?", token).First(&college).Error; errors.Is(err, gorm.ErrRecordNotFound) {
+		return domain.College{}, domain.ErrNotFound
+	} else if err != nil {
 		return domain.College{}, err
 	}
 	return college.ToDomain(), nil
