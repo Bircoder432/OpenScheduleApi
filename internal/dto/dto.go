@@ -1,42 +1,58 @@
 package dto
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 )
-
-type NewParserRequest struct {
-	CollegeName string   `json:"collegeName"`
-	CampusNames []string `json:"campusNames"`
-}
-
-type NewParserResponse struct {
-	Token string `json:"token"`
-}
 
 type UpdateGroupsRequest struct {
 	CampusID          uint     `json:"campusId"`
 	StudentGroupNames []string `json:"studentGroupNames"`
 }
 
-type GetParserResponse struct {
-	CollegeID uint `json:"collegeId"`
+type CollegeResponse struct {
+	ID       uint             `json:"collegeId"`
+	Name     string           `json:"name"`
+	Campuses []CampusResponse `json:"campuses,omitempty"`
 }
 
-type ScheduleResponse struct {
-	GroupID uint                     `json:"groupId"`
-	Date    time.Time                `json:"date"`
-	Lessons []ScheduleLessonResponse `json:"lessons"`
+type CampusResponse struct {
+	ID            uint                   `json:"campusId"`
+	Name          string                 `json:"name"`
+	StudentGroups []StudentGroupResponse `json:"groups,omitempty"`
+}
+type StudentGroupResponse struct {
+	ID       uint   `json:"studentGroupId"`
+	Name     string `json:"name"`
+	CampusID uint   `json:"campusId"`
 }
 
-type ScheduleLessonResponse struct {
-	Title     string     `json:"title"`
-	Cabinet   string     `json:"cabinet"`
-	Teacher   string     `json:"teacher"`
-	Order     uint       `json:"order"`
-	StartTime HourMinute `json:"startTime"`
-	EndTime   HourMinute `json:"endTime"`
+type Call struct {
+	CallID  uint         `json:"callId"`
+	Weekday time.Weekday `json:"weekday"`
+	Begins  HourMinute   `json:"begins"`
+	Ends    HourMinute   `json:"ends"`
+	Order   uint         `json:"order"`
+}
+
+type HourMinute time.Time
+
+func (hm *HourMinute) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	t, err := time.Parse("15:04", s)
+	if err != nil {
+		return err
+	}
+	*hm = HourMinute(t)
+	return nil
+}
+
+func (hm HourMinute) MarshalJSON() ([]byte, error) {
+	t := time.Time(hm)
+	s := t.Format("15:04:05")
+	return []byte(`"` + s + `"`), nil
 }
 
 type ErrorResponse struct {
