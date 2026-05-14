@@ -1,14 +1,14 @@
-package router
+package server
 
 import (
 	"errors"
 
-	"github.com/ThisIsHyum/OpenScheduleApi/internal/database"
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/domain"
 	"github.com/ThisIsHyum/OpenScheduleApi/internal/dto"
-	"github.com/ThisIsHyum/OpenScheduleApi/internal/models"
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/repository"
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/service"
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
-	"gorm.io/gorm"
 )
 
 const (
@@ -17,36 +17,28 @@ const (
 )
 
 type CampusHandler struct {
-	db     *database.Db
-	logger *logrus.Logger
+	service *service.CampusService
+	logger  *logrus.Logger
 }
 
-func NewCampusHandler(app *fiber.App, db *database.Db, logger *logrus.Logger) {
-	handler := CampusHandler{db: db, logger: logger}
+func NewCampusHandler(app *fiber.App, campusRepo repository.CampusRepo, groupRepo repository.StudentGroupRepo, collegeRepo repository.CollegeRepo, logger *logrus.Logger) {
+	campusService := service.NewCampusService(campusRepo, groupRepo, collegeRepo)
+	handler := CampusHandler{service: campusService, logger: logger}
 	app.Get(getCampuses, handler.GetCampuses)
 	app.Get(getCampus, handler.GetCampus)
 }
 
 func (h CampusHandler) GetCampuses(ctx fiber.Ctx) error {
+	c := ctx.Context()
 	var name = ctx.Query("name")
 	var id = fiber.Params[uint](ctx, "collegeId")
 	if id == 0 {
 		return dto.NewErrorResponse("invalid collegeId", fiber.StatusBadRequest).Send(ctx)
 	}
 
-	var campuses []models.Campus
-	var err error
-
-	if _, err := h.db.GetCollege(id); errors.Is(err, gorm.ErrRecordNotFound) {
+	campuses, err := h.service.GetCampusesByCollegeID(c, id, name)
+	if errors.Is(err, domain.ErrNotFound) {
 		return dto.NewErrorResponse("college not found", fiber.StatusNotFound).Send(ctx)
-	} else if err != nil {
-		h.logger.WithError(err).Error("unable to get college")
-		return dto.NewErrorResponse("internal server error", fiber.StatusInternalServerError).Send(ctx)
-	}
-	if name != "" {
-		campuses, err = h.db.GetCampusesByName(id, name)
-	} else {
-		campuses, err = h.db.GetCampusesByCollegeID(id)
 	}
 	if err != nil {
 		h.logger.WithError(err).Error("unable to get campuses")
@@ -56,12 +48,13 @@ func (h CampusHandler) GetCampuses(ctx fiber.Ctx) error {
 }
 
 func (h CampusHandler) GetCampus(ctx fiber.Ctx) error {
+	c := ctx.Context()
 	id := fiber.Params[uint](ctx, "campusId")
 	if id == 0 {
 		return dto.NewErrorResponse("invalid campusId", fiber.StatusBadRequest).Send(ctx)
 	}
-	campus, err := h.db.GetCampusByID(id)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	campus, err := h.service.GetCampusByID(c, id)
+	if errors.Is(err, domain.ErrNotFound) {
 		return dto.NewErrorResponse("campus not found", fiber.StatusNotFound).Send(ctx)
 	} else if err != nil {
 		h.logger.WithError(err).Error("unable to get campus")

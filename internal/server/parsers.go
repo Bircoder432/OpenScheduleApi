@@ -1,9 +1,12 @@
-package router
+package server
 
 import (
-	"github.com/ThisIsHyum/OpenScheduleApi/internal/database"
+	"time"
+
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/domain"
 	"github.com/ThisIsHyum/OpenScheduleApi/internal/dto"
-	"github.com/ThisIsHyum/OpenScheduleApi/internal/models"
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/repository"
+	"github.com/ThisIsHyum/OpenScheduleApi/internal/service"
 	"github.com/gofiber/fiber/v3"
 	"github.com/sirupsen/logrus"
 )
@@ -17,13 +20,18 @@ const (
 )
 
 type ParserHandler struct {
-	db     *database.Db
-	logger *logrus.Logger
+	service *service.ParserService
+	logger  *logrus.Logger
 }
 
-func NewParserHandler(app *fiber.App, db *database.Db, logger *logrus.Logger) {
-	handler := ParserHandler{db: db, logger: logger}
-	mh := MiddlewareHandler{db: db, logger: logger}
+func NewParserHandler(app *fiber.App,
+	callRepo repository.CallRepo, groupRepo repository.StudentGroupRepo,
+	lessonRepo repository.LessonRepo, campusRepo repository.CampusRepo,
+	collegeRepo repository.CollegeRepo, logger *logrus.Logger) {
+	parserService := service.NewParserService(
+		callRepo, groupRepo, lessonRepo, campusRepo, collegeRepo)
+	handler := ParserHandler{logger: logger, service: parserService}
+	mh := MiddlewareHandler{parserService: parserService, logger: logger}
 	app.Group(parser, mh.ParserAuthMiddleware).
 		Get(getParser, handler.GetParser).
 		Post(updateCalls, handler.UpdateCalls).
@@ -32,14 +40,16 @@ func NewParserHandler(app *fiber.App, db *database.Db, logger *logrus.Logger) {
 }
 
 func (h ParserHandler) UpdateGroups(ctx fiber.Ctx) error {
+	c := ctx.Context()
 	var requestBody dto.UpdateGroupsRequest
 	if err := ctx.Bind().Body(&requestBody); err != nil {
 		return dto.NewErrorResponse("invalid request body", fiber.StatusBadRequest).Send(ctx)
 	}
+
 	if requestBody.CampusID == 0 || len(requestBody.StudentGroupNames) == 0 {
 		return dto.NewErrorResponse("invalid request data", fiber.StatusBadRequest).Send(ctx)
 	}
-	if err := h.db.UpdateGroups(requestBody.CampusID, requestBody.StudentGroupNames); err != nil {
+	if err := h.service.UpdateGroups(c, requestBody.CampusID, requestBody.StudentGroupNames); err != nil {
 		h.logger.WithError(err).Error("unable to update groups")
 		return dto.NewErrorResponse("internal server error", fiber.StatusInternalServerError).Send(ctx)
 	}
@@ -47,16 +57,28 @@ func (h ParserHandler) UpdateGroups(ctx fiber.Ctx) error {
 }
 
 func (h ParserHandler) UpdateCalls(ctx fiber.Ctx) error {
+	c := ctx.Context()
 	collegeId := fiber.Locals[uint](ctx, "collegeId")
-	var calls []models.Call
+	var calls []dto.Call
 	if err := ctx.Bind().Body(&calls); err != nil {
 		return dto.NewErrorResponse("invalid request body", fiber.StatusBadRequest).Send(ctx)
 	}
+
 	if len(calls) == 0 {
 		return dto.NewErrorResponse("empty calls list", fiber.StatusBadRequest).Send(ctx)
 	}
 
-	if err := h.db.UpdateCalls(collegeId, calls); err != nil {
+	domainCalls := make([]domain.Call, 0, len(calls))
+	for _, call := range calls {
+		domainCalls = append(domainCalls, domain.Call{
+			ID:      call.CallID,
+			Weekday: call.Weekday,
+			Begins:  time.Time(call.Begins),
+			Ends:    time.Time(call.Ends),
+			Order:   call.Order,
+		})
+	}
+	if err := h.service.UpdateCalls(c, collegeId, domainCalls); err != nil {
 		h.logger.WithError(err).Error("unable to update calls")
 		return dto.NewErrorResponse("internal server error", fiber.StatusInternalServerError).Send(ctx)
 	}
@@ -64,7 +86,9 @@ func (h ParserHandler) UpdateCalls(ctx fiber.Ctx) error {
 }
 
 func (h ParserHandler) AddLessons(ctx fiber.Ctx) error {
-	var lessons []models.Lesson
+	c := ctx.Context()
+
+	var lessons []dto.Lesson
 	if err := ctx.Bind().Body(&lessons); err != nil {
 		return dto.NewErrorResponse("invalid request body", fiber.StatusBadRequest).Send(ctx)
 	}
@@ -73,7 +97,20 @@ func (h ParserHandler) AddLessons(ctx fiber.Ctx) error {
 		return dto.NewErrorResponse("empty lessons list", fiber.StatusBadRequest).Send(ctx)
 	}
 
-	if err := h.db.AddLessons(lessons); err != nil {
+	domainLessons := make([]domain.Lesson, 0, len(lessons))
+	for _, lesson := range lessons {
+		domainLessons = append(domainLessons, domain.Lesson{
+			ID:             lesson.LessonID,
+			Title:          lesson.Title,
+			Cabinet:        lesson.Cabinet,
+			Date:           lesson.Date,
+			Teacher:        lesson.Teacher,
+			Order:          lesson.Order,
+			StudentGroupID: lesson.StudentGroupID,
+		})
+	}
+
+	if err := h.service.AddLessons(c, domainLessons); err != nil {
 		h.logger.WithError(err).Error("unable to add lessons")
 		return dto.NewErrorResponse("internal server error", fiber.StatusInternalServerError).Send(ctx)
 	}
@@ -82,9 +119,5 @@ func (h ParserHandler) AddLessons(ctx fiber.Ctx) error {
 
 func (h ParserHandler) GetParser(ctx fiber.Ctx) error {
 	collegeId := fiber.Locals[uint](ctx, "collegeId")
-	parserId := fiber.Locals[uint](ctx, "parserId")
-	return ctx.JSON(dto.GetParserResponse{
-		CollegeID: collegeId,
-		ParserID:  parserId,
-	})
+	return ctx.JSON(dto.GetParserResponse{CollegeID: collegeId})
 }
